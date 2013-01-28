@@ -1,0 +1,12 @@
+classpath.txt
+tmp
+tmpdb
+jeter*
+*~
+.classpath
+.project
+archive.tar.gz
+bin
+dist
+config.mk
+derby.log

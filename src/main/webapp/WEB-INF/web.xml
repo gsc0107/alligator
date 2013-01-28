@@ -1,0 +1,47 @@
+<web-app id="WebApp_ID" version="3.0"
+	xmlns="http://java.sun.com/xml/ns/j2ee" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd">
+	<display-name>Restful Web Application</display-name>
+ 	
+ 	<listener>
+ 		<listener-class>com.github.lindenb.alligator.AlligatorContextListener</listener-class>
+ 		
+ 	</listener>
+ 	
+ 	<context-param>   
+	   <param-name>config.json</param-name>
+	   <param-value>/WEB-INF/config.json</param-value>
+	</context-param>
+ 	
+	<servlet>
+		<servlet-name>jersey-serlvet</servlet-name>
+		<servlet-class>
+                     com.sun.jersey.spi.container.servlet.ServletContainer
+                </servlet-class>
+		<init-param>
+		     <param-name>com.sun.jersey.config.property.packages</param-name>
+		     <param-value>com.github.lindenb.alligator.webapp.services</param-value>
+		</init-param>
+		<load-on-startup>1</load-on-startup>
+	</servlet>
+ 
+	<servlet-mapping>
+		<servlet-name>jersey-serlvet</servlet-name>
+		<url-pattern>/rest/*</url-pattern>
+	</servlet-mapping>
+ 
+ 
+ <servlet>
+		<servlet-name>test</servlet-name>
+		<servlet-class>com.github.lindenb.alligator.TestServlet</servlet-class>
+		<load-on-startup>1</load-on-startup>
+	</servlet>
+ 
+	<servlet-mapping>
+		<servlet-name>test</servlet-name>
+		<url-pattern>/test/*</url-pattern>
+	</servlet-mapping>
+
+ 
+</web-app>

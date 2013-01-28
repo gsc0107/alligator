@@ -1,3 +1,4 @@
+
 include tools.mk config.mk
 HOSTNAME=$(shell hostname)
 XSD_SANDBOX=https://raw.github.com/lindenb/xsd-sandbox/master/schemas
@@ -5,8 +6,29 @@ LIST_PHONY_TARGETS=
 .PHONY= ${LIST_PHONY_TARGETS} 
 
 generated.dir=src/main/generated
+ucsc.databases.hg19=kgXref knownGene 
 
 LISTJAR=`cat classpath.txt| tr "\n" ":"`
+
+define TOUPPER
+$(shell echo -n "$(1)"| tr "[a-z]" "[A-Z]")
+endef
+
+define LOAD_UCSC
+
+LIST_PHONY_TARGETS+= load.ucsc.$(1).$(2)
+
+
+
+load.ucsc.$(1).$(2):
+	mkdir -p tmp
+	curl -s "http://hgdownload.cse.ucsc.edu/goldenPath/$(1)/database/$(2).txt.gz" |\
+		gunzip -c |\
+		awk -F '	' '{i++;printf("%d\t%s\n",i,$$$$0);}' |\
+		awk -F '	' '{for(i=1;i<=NF;i++) {if(i>1) printf("\t"); if($$$$i=="") { printf("\"\""); } else {printf("%s",$$$$i);}} printf("\n");}'  > tmp/$(2).tsv
+	(cat sql/database.in.sql; echo "DELETE FROM $(1).$(2);CALL SYSCS_UTIL.SYSCS_IMPORT_TABLE('$(call TOUPPER,$(1))', '$(call TOUPPER,$(2))', 'tmp/$(2).tsv', '	', NULL, NULL,0); select * from $(1).$(2) FETCH NEXT 2 ROWS ONLY;" ;cat sql/database.out.sql;) | ${ij} 
+	rm -rf tmp
+endef
 
 ifeq "${HOSTNAME}" "hardyweinberg"
 
@@ -18,6 +40,11 @@ glassfish.domain?=cardioserve
 database.dir=${HOME}/db
 
 endif
+database.host=localhost
+database.port=1527
+database.jdbc.uri=jdbc:derby://${database.host}:${database.port}
+
+
 LIST_PHONY_TARGETS+= all
 all: 
 	echo "please, select one of ${LIST_PHONY_TARGETS}"
@@ -32,18 +59,21 @@ webapp: classpath.txt
 	mkdir -p tmp/META-INF dist
 	cp -r src/main/webapp/* tmp/
 	mkdir -p tmp/WEB-INF/classes/META-INF tmp/WEB-INF/lib
+	cat classpath.txt | grep -v "glassfish/modules" | while read F; do cp $$F tmp/WEB-INF/lib ; done
 	cp ./src/main/resources/persistence/persistence.server.xml tmp/WEB-INF/classes/META-INF/persistence.xml 
 	${JAVAC} -cp $(LISTJAR)  \
 		-d tmp/WEB-INF/classes \
 		-sourcepath src/main/java:${generated.dir} \
 		src/main/java/com/github/lindenb/cardioserve/go/GoService.java \
+		src/main/java/com/github/lindenb/alligator/*.java \
+		./src/main/java/com/github/lindenb/alligator/webapp/services/SequenceServices.java \
 		`find src/main -name "ObjectFactory.java"`
 	jar cvf dist/cardioserve.jar -C tmp .
 	rm -rf tmp
 
 LIST_PHONY_TARGETS+= test 
 test:
-	echo "connect 'jdbc:derby://localhost:1527/${database.name};user=admin;password=adminadmin;create=false'; select * from DISEASEONTOLOGY.TERM FETCH NEXT 10 ROWS ONLY;" |\
+	echo "connect '${database.jdbc.uri};user=admin;password=adminadmin;create=false'; select * from HG19.KNOWNGENE FETCH NEXT 10 ROWS ONLY;" |\
 		${ij} 
 
 LIST_PHONY_TARGETS+= load.databases 
@@ -79,7 +109,7 @@ load.doid: create.doid.database classpath.txt doid.owl
 	${JAR} cvf dist/loaddoid.jar -C tmp .
 	java -Dhttp.nonProxyHosts=localhost -cp dist/loaddoid.jar:$(LISTJAR) \
 		com.github.lindenb.cardioserve.doid.LoadDoid \
-		-u "jdbc:derby://localhost:1527/${database.name};user=admin;password=adminadmin;create=false" \
+		-u "${database.jdbc.uri};user=admin;password=adminadmin;create=false" \
 		doid.owl
 	rm -rf tmp
 
@@ -102,7 +132,7 @@ load.goa: classpath.txt
 		${JAVA} -cp dist/loadgoa.jar:$(LISTJAR)  generated.uk.ac.ebi.goa.Associations |\
 		${JAVA} -cp dist/loadgoa.jar:$(LISTJAR)  \
 			com.github.lindenb.cardioserve.goa.LoadGoa \
-			-u "jdbc:derby://localhost:1527/${database.name};user=admin;password=adminadmin;create=false" 
+			-u "${database.jdbc.uri};user=admin;password=adminadmin;create=false" 
 		echo "done"
 	
 	
@@ -114,9 +144,10 @@ load.go: create.go.database classpath.txt go.xml
 	${JAR} cvf dist/loadgo.jar -C tmp .
 	java -Dhttp.nonProxyHosts=localhost -cp dist/loadgo.jar:$(LISTJAR) \
 		com.github.lindenb.cardioserve.go.LoadGo \
-		-u "jdbc:derby://localhost:1527/${database.name};user=admin;password=adminadmin;create=false" \
+		-u "${database.jdbc.uri};user=admin;password=adminadmin;create=false" \
 		go.xml
 	rm -rf tmp
+	
 
 go.xml: 
 	curl  "http://archive.geneontology.org/latest-termdb/go_daily-termdb.rdf-xml.gz" |\
@@ -124,14 +155,31 @@ go.xml:
 
 
 LIST_PHONY_TARGETS+= create.go.database 
-create.go.database: create.database 
-	cat sql/database.in.sql sql/go.sql sql/database.out.sql |\
+create.go.database: create.database  sql/go.sql 
+	cat sql/database.in.sql sql/go.sql  sql/database.out.sql |\
 	${HOME}/package/glassfish3/javadb/bin/ij 
-	
+
+LIST_PHONY_TARGETS+= load.ucsc.databases
+
+load.ucsc.databases:$(foreach D,${ucsc.databases.hg19}, load.ucsc.hg19.$D )
+
+$(eval $(foreach D,${ucsc.databases.hg19},$(call LOAD_UCSC,hg19,$D)))
+
+create.ucsc.database: sql/ucsc.sql
+	cat sql/database.in.sql $< sql/database.out.sql |\
+	${HOME}/package/glassfish3/javadb/bin/ij 
+
+
+sql/ucsc.sql: xsl/mysql2derby.xsl sql/ucsc.xml
+	xsltproc xsl/mysql2derby.xsl sql/ucsc.xml > $@
+
+sql/ucsc.xml:
+	mysqldump  --user=genome --host=genome-mysql.cse.ucsc.edu --single-transaction -X -d hg19 $(ucsc.databases.hg19) > $@
 
 classpath.txt:
 	rm -f $@
 	$(foreach B,\
+		${glassfish.dir}/glassfish/modules/javax.servlet-api.jar \
 		${glassfish.dir}/glassfish/modules/jersey-core.jar \
 		${glassfish.dir}/glassfish/modules/javax.ejb.jar \
 		${glassfish.dir}/javadb/lib/derbyclient.jar \
@@ -141,6 +189,10 @@ classpath.txt:
 		${glassfish.dir}/glassfish/modules/org.eclipse.persistence.jpa.jar \
 		${glassfish.dir}/glassfish/modules/org.eclipse.persistence.core.jar \
 		${glassfish.dir}/glassfish/modules/org.eclipse.persistence.asm.jar \
+		${glassfish.dir}/glassfish/modules/jackson-mapper-asl.jar \
+		${glassfish.dir}/glassfish/modules/jackson-core-asl.jar \
+		${picard.dir}/sam-${picard.version}.jar \
+		${picard.dir}/picard-${picard.version}.jar \
 		,echo "$B" >> $@ ;)
 	
 
@@ -158,9 +210,11 @@ stop.domain:
 
 LIST_PHONY_TARGETS+= create.database 
 create.database : ${database.dir}/${database.name}
+
 ${database.dir}/${database.name}:
 	echo "#creating database $@"
-	echo "connect 'jdbc:derby:$@;create=true;user=admin;password=adminadmin';disconnect;" | ${ij} 
+	echo "connect 'jdbc:derby:$@;create=true;user=admin;password=adminadmin';disconnect;" | ${ij}
+	
 
 LIST_PHONY_TARGETS+= create.jdbc.connection.pool 
 create.jdbc.connection.pool:
@@ -247,12 +301,27 @@ ${generated.dir}/generated/org/jensenlab:
 		"${XSD_SANDBOX}/bio/jensenlab/jensenlab.xsd"
 
 ${generated.dir}/generated.edu.northwestern.bioinformatics.projects.do_rif:
-	mkdir -p ${generated.dir}
+	mkdir -p ${generated.dir}genomes/
 		${XJC} -extension -Xinject-code -d ${generated.dir} \
 			 -b  "${XSD_SANDBOX}/bio/do_rif/dorif.jxb" \
 			"${XSD_SANDBOX}/bio/do_rif/dorif.xsd"
 
+LIST_PHONY_TARGETS+= genomes
 
+genomes: genomes/hg19.dict
+
+genomes/hg19.fa:
+	rm -f $@
+	mkdir -p $(dir $@)
+	curl -s "http://hgdownload.cse.ucsc.edu/goldenPath/hg19/chromosomes/md5sum.txt" | tr -s " " | cut -d ' ' -f 2 | grep chr22 |\
+		while read R; do curl "http://hgdownload.cse.ucsc.edu/goldenPath/hg19/chromosomes/$$R" | gunzip -c >> $@ ;done
+
+genomes/hg19.fa.fai: genomes/hg19.fa
+	${samtools} faidx $< 
+
+genomes/hg19.dict: genomes/hg19.fa
+	 ${JAVA} -jar ${picard.dir}/CreateSequenceDictionary.jar R=$< O=$@ GENOME_ASSEMBLY=hg19
+	
 archive.tar.gz: 
 	tar  cvfz $@ Makefile sql src
 
