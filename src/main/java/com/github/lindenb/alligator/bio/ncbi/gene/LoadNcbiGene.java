@@ -1,13 +1,15 @@
 package com.github.lindenb.alligator.bio.ncbi.gene;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
-import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.zip.GZIPOutputStream;
 
 import javax.xml.parsers.DocumentBuilder;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -16,6 +18,7 @@ import javax.xml.stream.XMLInputFactory;
 import javax.xml.stream.XMLStreamException;
 import javax.xml.stream.events.Attribute;
 import javax.xml.stream.events.XMLEvent;
+import javax.xml.transform.OutputKeys;
 import javax.xml.transform.Transformer;
 import javax.xml.transform.TransformerFactory;
 import javax.xml.transform.dom.DOMSource;
@@ -32,7 +35,12 @@ import org.w3c.dom.Text;
 
 public class LoadNcbiGene
 	{
-	private Connection connection;
+	private Connection connection=null;
+	
+	private LoadNcbiGene()
+		{
+		
+		}
 	
     /** parse Gene doc */
     private void parseDoc(
@@ -70,12 +78,15 @@ public class LoadNcbiGene
     private void cleanup(Node node)
     	{
     	boolean hasChild=false;
-    	for(Node c1=node.getFirstChild();c1!=null;c1=c1.getNextSibling())
+    	for(Node c1=node.getFirstChild();
+    			 c1!=null;
+    			 c1=c1.getNextSibling()
+    		)
     		{
     		if(c1.getNodeType()==Node.ELEMENT_NODE)
     			{
     			hasChild=true;
-    			cleanup(node);
+    			cleanup(c1);
     			}
     		}
     	if(hasChild)
@@ -95,10 +106,11 @@ public class LoadNcbiGene
     	}
     
 	public void run(InputStream in)
-		throws XMLStreamException,SQLException
+		throws Exception
 		{
         TransformerFactory trFactory=TransformerFactory.newInstance();
         Transformer tr=trFactory.newTransformer();
+        tr.setOutputProperty(OutputKeys.OMIT_XML_DECLARATION, "yes");
 		
 		DocumentBuilderFactory documentBuilderFactory=DocumentBuilderFactory.newInstance();
 		documentBuilderFactory.setNamespaceAware(false);
@@ -113,8 +125,6 @@ public class LoadNcbiGene
         //create XPATH expressions
         XPathExpression idExpr=xpath.compile("/Entrezgene/Entrezgene_track-info/Gene-track/Gene-track_geneid");
         XPathExpression locusExpr=xpath.compile("/Entrezgene/Entrezgene_gene/Gene-ref/Gene-ref_locus");
-        XPathExpression descExpr=xpath.compile("/Entrezgene/Entrezgene_gene/Gene-ref/Gene-ref_desc");
-        XPathExpression refGeneExpr=xpath.compile("/Entrezgene/Entrezgene_locus/Gene-commentary/Gene-commentary_products/Gene-commentary[Gene-commentary_heading='Reference']/Gene-commentary_accession");
         XPathExpression ensemblExpr=xpath.compile("/Entrezgene/Entrezgene_gene/Gene-ref/Gene-ref_db/Dbtag[Dbtag_db='Ensembl']/Dbtag_tag/Object-id/Object-id_str");
 
         
@@ -125,6 +135,7 @@ public class LoadNcbiGene
         xmlInputFactory.setProperty(XMLInputFactory.IS_COALESCING, Boolean.TRUE);
         xmlInputFactory.setProperty(XMLInputFactory.IS_REPLACING_ENTITY_REFERENCES, Boolean.TRUE);
         XMLEventReader reader= xmlInputFactory.createXMLEventReader(in);
+        long name_ids=0;
         while(reader.hasNext())
             {
             XMLEvent evt=reader.nextEvent();
@@ -138,34 +149,93 @@ public class LoadNcbiGene
             parseDoc(reader,dom,root);
             cleanup(dom);
             
-            //get locus name with xpath
+            long geneid=Long.parseLong((String)idExpr.evaluate(root, XPathConstants.STRING));
             String locus=(String)locusExpr.evaluate(root, XPathConstants.STRING);
-            
             String ensembl=(String)ensemblExpr.evaluate(root, XPathConstants.STRING);
-            String refGene=(String)refGeneExpr.evaluate(root, XPathConstants.STRING);
           
             Set<String> names=new HashSet<String>();
             
+            ByteArrayOutputStream baos=new ByteArrayOutputStream();
+            GZIPOutputStream gzos=new GZIPOutputStream(baos);
+            tr.transform(new DOMSource(dom), new StreamResult(gzos));
+            gzos.finish();
+            gzos.close();
+            byte array[]=baos.toByteArray();
             
             StringWriter sw=new StringWriter();
             tr.transform(new DOMSource(dom), new StreamResult(sw));
             
+            System.out.println(""+geneid+" "+array.length+" "+sw.toString().length()+" "+((double)sw.toString().length()/array.length));
+            
             
             PreparedStatement pstmt=connection.prepareStatement(
-            	"insert into NCBIGENE.gene(id,content) values(?,?)");
-            pstmt.setLong(1, 0L);
-            pstmt.setString(2, sw.toString());
+            	"insert into NCBI.gene(id,gzcontent) values(?,?)");
+            pstmt.setLong(1, geneid);
+            ByteArrayInputStream bais=new ByteArrayInputStream(array);
+            pstmt.setBlob(2, bais,array.length);
             pstmt.executeUpdate();
+            bais.close();
             
             pstmt=connection.prepareStatement(
-                	"insert into NCBIGENE.geneName(gene_id,name) values(?,?)");
+                	"insert into NCBI.NAME2GENE(id,gene_id,name) values(?,?,?)");
             for(String name:names)
             	{
-                pstmt.setLong(1, 0L);
-                pstmt.setString(2,name);
+            	pstmt.setLong(1,++name_ids);
+                pstmt.setLong(2, geneid);
+                pstmt.setString(3,name);
                 pstmt.executeUpdate();
             	}
            
            }
 		}
+	
+	
+	public void run(String[] args) throws Exception
+		{
+		int optind=0;
+		while(optind< args.length)
+			{
+			if(args[optind].equals("-h") ||
+			   args[optind].equals("-help") ||
+			   args[optind].equals("--help"))
+				{
+				System.err.println("Options:");
+				System.err.println(" -h help; This screen.");
+				return;
+				}
+			else if(args[optind].equals("-s"))
+				{
+				
+				}
+			else if(args[optind].startsWith("--"))
+				{
+				optind++;
+				break;
+				}
+			else if(args[optind].equals("--"))
+				{
+				optind++;
+				break;
+				}
+			else if(args[optind].startsWith("-"))
+				{
+				System.err.println("Unknown option "+args[optind]);
+				return;
+				}
+			else 
+				{
+				break;
+				}
+			++optind;
+			}
+		run(System.in);
+		}
+	
+	public static void main(String[] args)
+		throws Exception
+		{
+		LoadNcbiGene app=new LoadNcbiGene();
+		app.run(args);
+		}
+
 	}

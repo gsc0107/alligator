@@ -5,6 +5,11 @@ XSD_SANDBOX=https://raw.github.com/lindenb/xsd-sandbox/master/schemas
 LIST_PHONY_TARGETS=
 .PHONY= ${LIST_PHONY_TARGETS} 
 
+
+JAVAC?=${JAVA_HOME}/bin/javac
+JAVA?=${JAVA_HOME}/bin/java
+JAR?=${JAVA_HOME}/bin/jar
+
 generated.dir=src/main/generated
 ucsc.databases.hg19=kgXref knownGene 
 
@@ -12,6 +17,13 @@ LISTJAR=`cat classpath.txt| tr "\n" ":"`
 
 define TOUPPER
 $(shell echo -n "$(1)"| tr "[a-z]" "[A-Z]")
+endef
+
+
+define create.manifest
+	mkdir -p tmp/META-INF
+	echo "Manifest-Version: 1.0" > tmp/META-INF/MANIFEST.MF
+	echo "Main-Class: $(1)" >> tmp/META-INF/MANIFEST.MF
 endef
 
 define LOAD_UCSC
@@ -158,6 +170,26 @@ LIST_PHONY_TARGETS+= create.go.database
 create.go.database: create.database  sql/go.sql 
 	cat sql/database.in.sql sql/go.sql  sql/database.out.sql |\
 	${HOME}/package/glassfish3/javadb/bin/ij 
+
+
+LIST_PHONY_TARGETS+= load.ncbi.databases
+load.ncbi.databases: linux.gene2xml classpath.txt
+	mkdir -p tmp dist
+	${JAVAC} -d tmp -cp $(LISTJAR) -sourcepath src/main/java src/main/java/com/github/lindenb/alligator/bio/ncbi/gene/LoadNcbiGene.java 
+	$(call create.manifest,com.github.lindenb.alligator.bio.ncbi.gene.LoadNcbiGene)
+	${JAR} cmf tmp/META-INF/MANIFEST.MF dist/loadncbigene.jar -C tmp .
+	#
+	curl -s "ftp://ftp.ncbi.nlm.nih.gov/gene/DATA/ASN_BINARY/Mammalia/Homo_sapiens.ags.gz" |\
+	gunzip -c |\
+	./$< -b |\
+	grep -v DOCTYPE |\
+	java -jar dist/loadncbigene.jar
+	rm -rf tmp
+
+linux.gene2xml :  
+	curl -o $@.gz "ftp://ftp.ncbi.nlm.nih.gov/asn1-converters/by_program/gene2xml/$@.gz"
+	gunzip -f $@.gz
+	chmod 755 $@
 
 LIST_PHONY_TARGETS+= load.ucsc.databases
 
