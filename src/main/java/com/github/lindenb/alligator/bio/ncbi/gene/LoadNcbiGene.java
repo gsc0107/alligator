@@ -5,10 +5,11 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.StringWriter;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
-import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.zip.GZIPOutputStream;
 
 import javax.xml.parsers.DocumentBuilder;
@@ -31,6 +32,7 @@ import javax.xml.xpath.XPathFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 import org.w3c.dom.Text;
 
 public class LoadNcbiGene
@@ -105,7 +107,7 @@ public class LoadNcbiGene
     		}
     	}
     
-	public void run(InputStream in)
+	public void run(Connection con,InputStream in)
 		throws Exception
 		{
         TransformerFactory trFactory=TransformerFactory.newInstance();
@@ -124,9 +126,11 @@ public class LoadNcbiGene
 		 XPath xpath=xf.newXPath();
         //create XPATH expressions
         XPathExpression idExpr=xpath.compile("/Entrezgene/Entrezgene_track-info/Gene-track/Gene-track_geneid");
-        XPathExpression locusExpr=xpath.compile("/Entrezgene/Entrezgene_gene/Gene-ref/Gene-ref_locus");
-        XPathExpression ensemblExpr=xpath.compile("/Entrezgene/Entrezgene_gene/Gene-ref/Gene-ref_db/Dbtag[Dbtag_db='Ensembl']/Dbtag_tag/Object-id/Object-id_str");
+        XPathExpression locusExpr=xpath.compile("/Entrezgene/Entrezgene_gene/Gene-ref/Gene-ref_locus/text()");
+        XPathExpression ensemblExpr=xpath.compile("/Entrezgene/Entrezgene_gene/Gene-ref/Gene-ref_db/Dbtag[Dbtag_db='Ensembl']/Dbtag_tag/Object-id/Object-id_str/text()");
+        XPathExpression synonyms=   xpath.compile("/Entrezgene/Entrezgene_gene/Gene-ref/Gene-ref_syn/Gene-ref_syn_E/text()");
 
+      
         
         
 		//create xml stream factory
@@ -150,10 +154,28 @@ public class LoadNcbiGene
             cleanup(dom);
             
             long geneid=Long.parseLong((String)idExpr.evaluate(root, XPathConstants.STRING));
-            String locus=(String)locusExpr.evaluate(root, XPathConstants.STRING);
-            String ensembl=(String)ensemblExpr.evaluate(root, XPathConstants.STRING);
-          
-            Set<String> names=new HashSet<String>();
+            
+            
+            Set<String> names=new TreeSet<String>(String.CASE_INSENSITIVE_ORDER);
+
+            NodeList L=(NodeList)synonyms.evaluate(root, XPathConstants.NODESET);
+            for(int i=0;i< L.getLength();++i)
+            	{
+            	names.add(L.item(i).getNodeValue());
+            	}
+            L=(NodeList)ensemblExpr.evaluate(root, XPathConstants.NODESET);
+            for(int i=0;i< L.getLength();++i)
+	        	{
+	        	names.add(L.item(i).getNodeValue());
+	        	}
+            L=(NodeList)locusExpr.evaluate(root, XPathConstants.NODESET);
+            for(int i=0;i< L.getLength();++i)
+	        	{
+	        	names.add(L.item(i).getNodeValue());
+	        	}
+
+            
+                      
             
             ByteArrayOutputStream baos=new ByteArrayOutputStream();
             GZIPOutputStream gzos=new GZIPOutputStream(baos);
@@ -192,20 +214,18 @@ public class LoadNcbiGene
 	
 	public void run(String[] args) throws Exception
 		{
+		String dbURL=null;
 		int optind=0;
 		while(optind< args.length)
 			{
-			if(args[optind].equals("-h") ||
-			   args[optind].equals("-help") ||
-			   args[optind].equals("--help"))
+			if(args[optind].equals("-h"))
+			{
+			System.err.println(" -u (jdbc.uri) ");
+			return;
+			}
+			else if(args[optind].equals("-u") && optind+1 < args.length)
 				{
-				System.err.println("Options:");
-				System.err.println(" -h help; This screen.");
-				return;
-				}
-			else if(args[optind].equals("-s"))
-				{
-				
+				dbURL=args[++optind];
 				}
 			else if(args[optind].startsWith("--"))
 				{
@@ -228,7 +248,24 @@ public class LoadNcbiGene
 				}
 			++optind;
 			}
-		run(System.in);
+		
+		if(dbURL==null)
+			{
+			System.err.println("jdbc uri missing");
+			System.exit(-1);
+			}
+		
+		if(optind!=args.length)
+			{
+			System.err.println("Illegal number of arguments.");
+			System.exit(-1);
+			}
+		Class.forName("org.apache.derby.jdbc.ClientDriver");
+		Connection con=DriverManager.getConnection(dbURL);
+		con.setAutoCommit(false);
+		run(con,System.in);
+		con.commit();
+		con.close();
 		}
 	
 	public static void main(String[] args)
