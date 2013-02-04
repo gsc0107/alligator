@@ -67,19 +67,20 @@ deploy: webapp
 	${asadmin} deploy --force dist/cardioserve.jar
 
 LIST_PHONY_TARGETS+= webapp 
-webapp: classpath.txt
+webapp: classpath.txt embedded.classpath.txt 
 	mkdir -p tmp/META-INF dist
 	cp -r src/main/webapp/* tmp/
 	mkdir -p tmp/WEB-INF/classes/META-INF tmp/WEB-INF/lib
-	cat classpath.txt | grep -v "glassfish/modules" | while read F; do cp $$F tmp/WEB-INF/lib ; done
+	cat embedded.classpath.txt | while read F; do cp $$F tmp/WEB-INF/lib ; done
 	cp ./src/main/resources/persistence/persistence.server.xml tmp/WEB-INF/classes/META-INF/persistence.xml 
 	${JAVAC} -cp $(LISTJAR)  \
 		-d tmp/WEB-INF/classes \
 		-sourcepath src/main/java:${generated.dir} \
-		src/main/java/com/github/lindenb/cardioserve/go/GoService.java \
+		src/main/java/com/github/lindenb/alligator/bio/go/GoService.java \
 		src/main/java/com/github/lindenb/alligator/*.java \
 		./src/main/java/com/github/lindenb/alligator/webapp/services/SequenceServices.java \
-		`find src/main -name "ObjectFactory.java"`
+		`find src/main -name "ObjectFactory.java"` \
+		`find ${generated.dir} -name "*.java"`
 	jar cvf dist/cardioserve.jar -C tmp .
 	rm -rf tmp
 
@@ -208,8 +209,8 @@ sql/ucsc.sql: xsl/mysql2derby.xsl sql/ucsc.xml
 sql/ucsc.xml:
 	mysqldump  --user=genome --host=genome-mysql.cse.ucsc.edu --single-transaction -X -d hg19 $(ucsc.databases.hg19) > $@
 
-classpath.txt:
-	rm -f $@
+classpath.txt: embedded.classpath.txt
+	cp $< $@
 	$(foreach B,\
 		${glassfish.dir}/glassfish/modules/javax.servlet-api.jar \
 		${glassfish.dir}/glassfish/modules/jersey-core.jar \
@@ -223,10 +224,16 @@ classpath.txt:
 		${glassfish.dir}/glassfish/modules/org.eclipse.persistence.asm.jar \
 		${glassfish.dir}/glassfish/modules/jackson-mapper-asl.jar \
 		${glassfish.dir}/glassfish/modules/jackson-core-asl.jar \
+		,echo "$B" >> $@ ;)
+
+embedded.classpath.txt:
+	rm -f $@
+	echo "${spring.dir}/projects/spring-build/lib/ivy/commons-logging.jar" >> $@
+	$(foreach B,\
 		${picard.dir}/sam-${picard.version}.jar \
 		${picard.dir}/picard-${picard.version}.jar \
 		,echo "$B" >> $@ ;)
-	
+	$(foreach B,beans core web context asm expression, echo "${spring.dist}/org.springframework.${B}-${spring.version}.jar" >> $@; )
 
 LIST_PHONY_TARGETS+= start.domain 
 start.domain:
@@ -301,7 +308,8 @@ LIST_PHONY_TARGETS+= clean.all
 cean.all: shutdown
 	rm -rf ${database.dir} ${generated.dir}
 
-generate.classes:\
+LIST_PHONY_TARGETS+= pojos
+generate.classes: pojos\
 	${generated.dir}/generated/org/geneontology \
 	${generated.dir}/generated/org/diseaseontology \
 	${generated.dir}/generated/ebi/ac/uk/goa \
@@ -337,6 +345,12 @@ ${generated.dir}/generated.edu.northwestern.bioinformatics.projects.do_rif:
 		${XJC} -extension -Xinject-code -d ${generated.dir} \
 			 -b  "${XSD_SANDBOX}/bio/do_rif/dorif.jxb" \
 			"${XSD_SANDBOX}/bio/do_rif/dorif.xsd"
+
+LIST_PHONY_TARGETS+=
+pojos: src/main/resources/pojos.xml
+	xsltproc --stringparam outdir ${generated.dir} \
+		../xslt-sandbox/stylesheets/java/pojo2java.xsl $< 
+
 
 LIST_PHONY_TARGETS+= genomes
 

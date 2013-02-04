@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:util="http://www.springframework.org/schema/util"
+       xsi:schemaLocation="http://www.springframework.org/schema/beans
+           http://www.springframework.org/schema/beans/spring-beans-3.0.xsd">
+
+
+
+<bean id="genomes" class="com.github.lindenb.bio.Genomes">
+	<property name="defaultGenome"><ref bean="hg19" /></property>
+	<property name="genomes">
+		<map>
+			<entry key="hg19">
+				<ref bean="hg19"/>
+			</entry>
+		</map>
+		
+	</property>
+</bean>
+
+<bean id="hg19" class="com.github.lindenb.bio.Reference">
+	 <property name="id"><value>hg19</value></property>
+	 <property name="path"><value>/home/lindenb/src/cardioserve/genomes/hg19.fa</value></property>
+	 <property name="chromosomes" >
+	 	<map>
+	      <entry>
+	        <key><value>chr22</value></key>
+	        <bean class="com.github.lindenb.bio.Chromosome">
+        		<property name="name"><value>chr22</value></property>
+        		<property name="aliases">
+        			<set>
+        				<value>22</value>
+        			</set>
+        		</property>
+        	</bean>
+	      </entry>
+    	</map>
+	 </property>
+</bean>
+
+</beans>

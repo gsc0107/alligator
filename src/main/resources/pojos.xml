@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<package name="com.github.lindenb" xmlns="http://github.com/lindenb/xslt-sandbox/stylesheets/java/pojo2va/">
+
+<package name="config">
+	<class name="config" generate-jaxb="true">
+		<property name="fastaQueryMaxLength" type="int" default="10000000"/>
+		<property name="fastaQueryBufferSize" type="int" default="100000"/>
+		<property name="fastaLineLength" type="int" default="60"/>
+	</class>
+</package>
+
+
+<package name="bio">
+
+
+
+<class name="chromosome">
+	<property name="name" type="String"/>
+	<property name="length" type="int"/>
+	<property name="aliases" type="java.util.Set&lt;String&gt;"/>
+</class>
+
+<class name="reference">
+	<property name="id" type="String"/>
+	<property name="description" type="String"/>
+	<property name="path" type="String"/>
+	<property name="chromosomes" type="java.util.Map&lt;String,Chromosome&gt;"/>
+	<code>
+	public Chromosome getChromosomeByName(String name)
+		{
+		if(name==null) return null;
+		Chromosome c=getChromosomes().get(name);
+		if(c!=null) return c;
+		for(Chromosome c2:getChromosomes().values())
+			{
+			if(c2.getAliases().contains(name)) return c2;
+			}
+		return null;
+		}
+	</code>
+</class>
+
+<class name="genomes">
+	<property name="defaultGenome" type="Reference"/>
+	<property name="genomes" type="java.util.Map&lt;String,Reference&gt;"/>
+</class>
+
+
+</package>
+
+
+</package>

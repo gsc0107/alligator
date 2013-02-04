@@ -4,15 +4,15 @@
 	xsi:schemaLocation="http://java.sun.com/xml/ns/javaee http://java.sun.com/xml/ns/javaee/web-app_3_0.xsd">
 	<display-name>Restful Web Application</display-name>
  	
- 	<listener>
- 		<listener-class>com.github.lindenb.alligator.AlligatorContextListener</listener-class>
- 		
- 	</listener>
+<context-param>
+    <param-name>contextConfigLocation</param-name>
+    <param-value>/WEB-INF/config*.xml</param-value>
+</context-param>
+
+<listener>
+    <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
+</listener>
  	
- 	<context-param>   
-	   <param-name>config.json</param-name>
-	   <param-value>/WEB-INF/config.json</param-value>
-	</context-param>
  	
 	<servlet>
 		<servlet-name>jersey-serlvet</servlet-name>
