@@ -1,2 +1,2 @@
-connect 'jdbc:derby://localhost:1527/CARDIOSERVE;user=admin;password=adminadmin;create=false';
+connect 'jdbc:derby://localhost:1527/alligator;user=admin;password=adminadmin;create=false';
 

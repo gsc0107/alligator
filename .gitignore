@@ -1,6 +1,7 @@
 classpath.txt
+embedded.classpath.txt
 tmp
-tmpdb
+tmp*.db
 jeter*
 *~
 .classpath
@@ -10,3 +11,4 @@ bin
 dist
 config.mk
 derby.log
+genomes

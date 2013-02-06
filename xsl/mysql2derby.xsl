@@ -45,6 +45,7 @@ create table <xsl:value-of select="@name"/>
 <xsl:text> </xsl:text>
 <xsl:choose>
   <xsl:when test="starts-with(@Type,'int(')">int</xsl:when>
+  <xsl:when test="starts-with(@Type,'smallint(')">smallint</xsl:when>
   <xsl:when test="starts-with(@Type,'varchar(')"><xsl:value-of select="@Type"/></xsl:when>
  <xsl:otherwise>clob</xsl:otherwise>
 </xsl:choose>

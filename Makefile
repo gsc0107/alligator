@@ -1,5 +1,5 @@
 
-include tools.mk config.mk
+include tools.mk
 HOSTNAME=$(shell hostname)
 XSD_SANDBOX=https://raw.github.com/lindenb/xsd-sandbox/master/schemas
 LIST_PHONY_TARGETS=
@@ -9,9 +9,10 @@ LIST_PHONY_TARGETS=
 JAVAC?=${JAVA_HOME}/bin/javac
 JAVA?=${JAVA_HOME}/bin/java
 JAR?=${JAVA_HOME}/bin/jar
+WSGEN?=${JAVA_HOME}/bin/wsgen
 
 generated.dir=src/main/generated
-ucsc.databases.hg19=kgXref knownGene 
+ucsc.databases.hg19=snp135 kgXref knownGene 
 
 LISTJAR=`cat classpath.txt| tr "\n" ":"`
 
@@ -43,19 +44,19 @@ load.ucsc.$(1).$(2):
 endef
 
 ifeq "${HOSTNAME}" "hardyweinberg"
-
-database.name=CARDIOSERVE
-database.dir=$(dir $(firstword $(MAKEFILE_LIST)))tmpdb
 java.proxy= -Dhttp.proxyHost=cache.ha.univ-nantes.fr  -Dhttp.proxyPort=3128 
 else
-glassfish.domain?=cardioserve
-database.dir=${HOME}/db
-
+java.proxy=
 endif
+
+database.name=alligator
+database.dir=$(dir $(firstword $(MAKEFILE_LIST)))tmp.${database.name}.db
 database.host=localhost
 database.port=1527
-database.jdbc.uri=jdbc:derby://${database.host}:${database.port}
-
+database.jdbc.uri=jdbc:derby://${database.host}:${database.port}/${database.name}
+database.jdbc.user=admin
+database.jdbc.password=adminadmin
+glassfish.domain?=${database.name}
 
 LIST_PHONY_TARGETS+= all
 all: 
@@ -64,25 +65,38 @@ all:
 
 LIST_PHONY_TARGETS+= deploy 
 deploy: webapp
-	${asadmin} deploy --force dist/cardioserve.jar
+	${asadmin} deploy --force dist/alligator.jar
 
 LIST_PHONY_TARGETS+= webapp 
 webapp: classpath.txt embedded.classpath.txt 
 	mkdir -p tmp/META-INF dist
 	cp -r src/main/webapp/* tmp/
-	mkdir -p tmp/WEB-INF/classes/META-INF tmp/WEB-INF/lib
+	mkdir -p tmp/WEB-INF/classes/META-INF tmp/WEB-INF/lib tmp/WEB-INF/wsdl
 	cat embedded.classpath.txt | while read F; do cp $$F tmp/WEB-INF/lib ; done
-	cp ./src/main/resources/persistence/persistence.server.xml tmp/WEB-INF/classes/META-INF/persistence.xml 
+	cat ./src/main/resources/persistence/persistence.server.xml |\
+		sed -e "s%__JDBC_URI__%${database.jdbc.uri}%" \
+		    -e "s/__JDBC_USER__/${database.jdbc.user}/" \
+		    -e "s/__JDBC_PASSWORD__/${database.jdbc.user}/" \
+		    -e "s%__JTA_DATA_SOURCE__%jdbc/${database.name}%" > tmp/WEB-INF/classes/META-INF/persistence.xml 
 	${JAVAC} -cp $(LISTJAR)  \
 		-d tmp/WEB-INF/classes \
 		-sourcepath src/main/java:${generated.dir} \
 		src/main/java/com/github/lindenb/alligator/bio/go/GoService.java \
 		src/main/java/com/github/lindenb/alligator/*.java \
-		./src/main/java/com/github/lindenb/alligator/webapp/services/SequenceServices.java \
+		./src/main/java/com/github/lindenb/alligator/webapp/services/ucsc/UcscServices.java \
 		`find src/main -name "ObjectFactory.java"` \
 		`find ${generated.dir} -name "*.java"`
-	jar cvf dist/cardioserve.jar -C tmp .
+	#${WSGEN} -cp $(LISTJAR):tmp/WEB-INF/classes \
+	#	-r tmp/WEB-INF/wsdl \
+	#	-d tmp/WEB-INF/classes  \
+	#	-s tmp/WEB-INF/classes -keep -wsdl \
+	#	 -servicename "{http://ns}/${database.name}/ws" \
+	#	com.github.lindenb.alligator.webapp.services.ucsc.UcscServices
+	#sed -i 's%REPLACE_WITH_ACTUAL_URL%http://localhost:8080/${database.name}/ws%' tmp/WEB-INF/wsdl/UcscServices.wsdl
+	jar cvf dist/alligator.jar -C tmp .
 	rm -rf tmp
+
+
 
 LIST_PHONY_TARGETS+= test 
 test:
@@ -235,6 +249,15 @@ embedded.classpath.txt:
 		,echo "$B" >> $@ ;)
 	$(foreach B,beans core web context asm expression, echo "${spring.dist}/org.springframework.${B}-${spring.version}.jar" >> $@; )
 
+LIST_PHONY_TARGETS+= create.domain
+create.domain:
+	${asadmin} create-domain --savelogin  ${glassfish.domain}
+	
+LIST_PHONY_TARGETS+= delete.domain
+delete.domain:
+	${asadmin} delete-domain ${glassfish.domain}
+
+
 LIST_PHONY_TARGETS+= start.domain 
 start.domain:
 	${asadmin} start-domain ${glassfish.domain}
@@ -260,8 +283,8 @@ create.jdbc.connection.pool:
 	-${asadmin} create-jdbc-connection-pool \
 		--datasourceclassname org.apache.derby.jdbc.ClientDataSource \
 		--restype javax.sql.XADataSource \
-		--property "portNumber=1527:password=adminadmin:user=admin:serverName=localhost:databaseName=${database.name}" \
-		  cardioserve
+		--property "portNumber=1527:password=${database.jdbc.password}:user=${database.jdbc.user}:serverName=localhost:databaseName=${database.name}" \
+		  ${database.name}
 
 LIST_PHONY_TARGETS+= list.jdbc.connection.pools 
 list.jdbc.connection.pools:
@@ -270,8 +293,8 @@ list.jdbc.connection.pools:
 LIST_PHONY_TARGETS+= create.jdbc.resource 
 create.jdbc.resource :
 	-${asadmin}  create-jdbc-resource \
-   		--connectionpoolid cardioserve \
-   		"jdbc/cardioserve"
+   		--connectionpoolid ${database.name} \
+   		"jdbc/${database.name}"
 
 LIST_PHONY_TARGETS+= list.jdbc.resources 
 list.jdbc.resources:

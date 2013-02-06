@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<persistence    xmlns="http://java.sun.com/xml/ns/persistence" version="1.0" >
+  <persistence-unit name="alligatorEntityMgr" transaction-type="JTA">
+    <jta-data-source>__JTA_DATA_SOURCE__</jta-data-source>
+    <provider>org.eclipse.persistence.jpa.PersistenceProvider</provider>
+    <class>com.github.lindenb.alligator.bio.ucsc.hg19.KnownGene</class>
+    <class>com.github.lindenb.alligator.bio.ucsc.hg19.KgXRef</class>
+    <properties>
+      <property name="javax.persistence.jdbc.driver" value="org.apache.derby.jdbc.ClientDriver" />
+      <property name="javax.persistence.jdbc.url"
+        value="__JDBC_URI__;create=false" />
+      <property name="javax.persistence.jdbc.user" value="__JDBC_USER__" />
+      <property name="javax.persistence.jdbc.password" value="__JDBC_PASSWORD__" />
+      <property name="eclipselink.logging.level" value="OFF"/>
+    </properties>
+
+  </persistence-unit>
+</persistence> 

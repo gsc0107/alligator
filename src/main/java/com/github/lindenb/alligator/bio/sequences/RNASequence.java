@@ -1,6 +1,5 @@
-package com.github.lindenb.alligator.bio.ucsc.hg19;
+package com.github.lindenb.alligator.bio.sequences;
 
-import java.util.ArrayList;
 import java.util.List;
 
 import com.github.lindenb.alligator.lang.AbstractCharSequence;
@@ -8,16 +7,17 @@ import com.github.lindenb.alligator.lang.AbstractCharSequence;
 public class RNASequence
 	extends AbstractCharSequence
 	{
-	private List<Integer> genomicPositions=new ArrayList<Integer>();
+	private List<Integer> genomicPositions;
 	private GenomicSequence genomic;
 	private char strand;
 	public RNASequence(
 		GenomicSequence genomic,
-		int genomicPositions[],
+		List<Integer> genomicPositions,
 		char strand)
 		{
 		this.genomic=genomic;
 		this.strand=strand;
+		this.genomicPositions=genomicPositions;
 		}
 	
 	private char complement(char c)
