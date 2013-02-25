@@ -1,16 +1,8 @@
 package com.github.lindenb.alligator.bio.ucsc.hg19;
 
-import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
 
-import javax.persistence.Column;
-import javax.persistence.Entity;
-import javax.persistence.Id;
-import javax.persistence.NamedQueries;
-import javax.persistence.NamedQuery;
-import javax.persistence.Table;
-import javax.persistence.Transient;
 import javax.xml.bind.annotation.XmlAttribute;
 import javax.xml.bind.annotation.XmlElement;
 import javax.xml.bind.annotation.XmlElementWrapper;
@@ -18,34 +10,19 @@ import javax.xml.bind.annotation.XmlRootElement;
 import javax.xml.bind.annotation.XmlTransient;
 //import javax.xml.bind.annotation.XmlType;
 
+import com.github.lindenb.bdbutils.binding.AbstractTupleSerializable;
+import com.github.lindenb.bdbutils.binding.TupleSerializable;
+import com.github.lindenb.bdbutils.bio.interval.TidBinPos;
+import com.sleepycat.bind.tuple.TupleInput;
+import com.sleepycat.bind.tuple.TupleOutput;
 
-@Entity(name="knownGene")
-@Table(name="knownGene",schema="hg19")
-@XmlRootElement(name="knownGene")
-@NamedQueries({
-	@NamedQuery(
-			name="hg19.knownGene.findByGeneSymbol",
-			query="SELECT G FROM kgXRef X, knownGene G  where G.name=X.kgId and X.geneSymbol= :geneSymbol"
-			),
-	@NamedQuery(
-			name="hg19.knownGene.findByName",
-			query="SELECT G FROM knownGene G  where G.name= :name"
-			)
-	,
-	@NamedQuery(
-			name="hg19.knownGene.findByPosition",
-			query="SELECT G FROM knownGene G  where G.chromosome= :chrom and NOT(G.txEnd <= :start OR  G.txStart > :end ) "
-			)
-	})
-//@XmlType(propOrder = { "chromosome", "txStart", "txtEnd","strand","cdsStart","cdsEnd","name"})
+
 public class KnownGene
-	implements Serializable
-	{
-	private static final long serialVersionUID = 1L;
-	
-	private long id;
+	extends AbstractTupleSerializable
+	implements TupleSerializable
+	{	
 	private String name;
-	private String chrom;
+	private byte tid;
 	private char _strand;
 	private int txStart;
 	private int txEnd;
@@ -57,22 +34,20 @@ public class KnownGene
 	private String alignId;
 	
 	
-	public static abstract class Interval
+	public abstract class Interval
 		{
-		private KnownGene gene;
 		protected int index;
 		public abstract String getName();
 		public abstract int getStart();
 		public abstract int getEnd();
-		protected Interval(KnownGene gene,int index)
+		protected Interval(int index)
 			{
-			this.gene=gene;
 			this.index=index;
 			}
 		@XmlTransient
 		protected KnownGene getGene()
 			{
-			return this.gene;
+			return KnownGene.this;
 			}
 		@Override
 		public String toString() {
@@ -81,15 +56,11 @@ public class KnownGene
 		}
 	
 	@XmlRootElement(name="exon")
-	public static class Exon extends Interval
+	public class Exon extends Interval
 		{
-		public Exon()
+		public Exon(int index)
 			{
-			super(null,-1);
-			}
-		public Exon(KnownGene gene,int index)
-			{
-			super(gene,index);
+			super(index);
 			}
 		@XmlAttribute(name="index")
 		int getExonIndex()
@@ -131,25 +102,14 @@ public class KnownGene
 		}
 	
 	
-	@Transient
 	public String getBuild()
 		{
 		return "hg19";
 		}
 	
-	@Id
-	@XmlAttribute(name="id")
-	public long getId()
-		{
-		return id;
-		}
-	
-	public void setId(long id) {
-		this.id = id;
-		}
+
 	
 	/** returns knownGene ID */
-	@Column(name="name")
 	public String getName()
 		{
 		return this.name;
@@ -160,39 +120,39 @@ public class KnownGene
 		this.name = name;
 		}
 	
-	/** returns chromosome name */
-	@Column(name="chrom")
 	public String getChromosome()
 		{
-		return this.chrom;
+		return Chromosomes.getInstance().get(getTid());
 		}
 	
-	public void setChromosome(String chrom)
+	public byte getTid()
 		{
-		this.chrom = chrom;
+		return this.tid;
+		}
+	
+	public void setTid(byte tid)
+		{
+		this.tid = tid;
 		}
 	
 	
 	/** returns the strand */
-	@Column(name="strand")
-	public String getStrand()
+	public char getStrand()
 		{
-		return String.valueOf(_strand);
+		return _strand;
 		}
 	
-	public void setStrand(String strand)
+	public void setStrand(char strand)
 		{
-		this._strand = strand.charAt(0);
+		this._strand = strand;
 		}
 	
 	@XmlTransient
-	@Transient
 	public boolean isForward()
     	{
-    	return getStrand().equals("+");
+    	return getStrand()=='+';
     	}
 	
-	@Column(name="txStart")
 	public int getTxStart()
 		{
 		return this.txStart;
@@ -203,7 +163,6 @@ public class KnownGene
 		this.txStart = txStart;
 		}
 	
-	@Column(name="txEnd")
 	public int getTxEnd()
 		{
 		return this.txEnd;
@@ -214,7 +173,6 @@ public class KnownGene
 		this.txEnd = txEnd;
 		}
 	
-	@Column(name="cdsStart")
 	public int getCdsStart()
 		{
 		return this.cdsStart;
@@ -225,7 +183,6 @@ public class KnownGene
 		this.cdsStart = cdsStart;
 		}
 	
-	@Column(name="cdsEnd")
 	public int getCdsEnd()
 		{
 		return this.cdsEnd;
@@ -237,7 +194,6 @@ public class KnownGene
 		}
 	
 
-	@Transient
 	@XmlAttribute(name="exon-count")
 	public int getExonCount()
 		{
@@ -269,7 +225,6 @@ public class KnownGene
 		}
 	
 	@XmlTransient
-	@Column(name="exonStarts")
 	public String getExonStarts() {
 		return join(_exonStarts);
 	}
@@ -280,7 +235,6 @@ public class KnownGene
 		}
 
 	@XmlTransient
-	@Column(name="exonEnds")
 	public String getExonEnds()
 		{
 		return join(_exonEnds);
@@ -312,10 +266,9 @@ public class KnownGene
 
 	public Exon getExon(int index)
 		{
-		return new Exon(this,index);
+		return new Exon(index);
 		}
 	
-	@Transient
 	@XmlElementWrapper(name="exons")
 	@XmlElement(name="exon")
 	public  List<Exon> getExons()
@@ -327,5 +280,51 @@ public class KnownGene
 			}
 		return L;
 		}
+	@Override
+	public void readFromTupleInput(TupleInput in)
+		{
+		this.name=in.readString();
+		this.tid=in.readByte();
+		this._strand=(char)in.readByte();
+		this.txStart=in.readInt();
+		this.txEnd=in.readInt();
+		this.cdsStart=in.readInt();
+		this.cdsEnd=in.readInt();
+		int exonCount=in.readInt();
+		this._exonStarts=new int[exonCount];
+		this._exonEnds=new int[exonCount];
+		for(int i=0;i< exonCount;++i)
+			{
+			this._exonStarts[i]=in.readInt();
+			this._exonEnds[i]=in.readInt();
+			}
+		this.proteinId=in.readString();
+		this.alignId=in.readString();
+		}
+	
+	@Override
+	public void writeToTupleOutpout(TupleOutput out)
+		{
+		out.writeString(this.name);
+		out.writeByte(this.tid);
+		out.writeByte((byte)this._strand);
+		out.writeInt(this.txStart);
+		out.writeInt(this.txEnd);
+		out.writeInt(this.cdsStart);
+		out.writeInt(this.cdsEnd);
+		out.writeInt(this._exonStarts.length);
+		for(int i=0;i< this._exonStarts.length;++i)
+			{
+			out.writeInt(this._exonStarts[i]);
+			out.writeInt(this._exonEnds[i]);
+			}
+		out.writeString(this.proteinId);
+		out.writeString(this.alignId);
+		}
+	
+  public TidBinPos getTidBinPos()
+	  {
+	  return new TidBinPos(getTid(), TidBinPos.bin(this.getTxStart(), getTxEnd()), getTxStart());
+	  }
 	
  }
